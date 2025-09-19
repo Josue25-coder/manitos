@@ -2,89 +2,52 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Practicando: {{ vocal }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='practica.css') }}">
-  <!-- Cargar MediaPipe Hands y Drawing -->
+  <title>Entrenamiento de la vocal {{ vocal }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='entrenar.css') }}">
+  <!-- MediaPipe Hands -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
-  
-<header>
-  <div class="back-container">
-    <a href="{{ url_for('index') }}" class="btn-back">⬅ Volver</a>
-  </div>
-  <h2>Practicando: {{ vocal }}</h2>
-  <p>Entrena con tu IA personalizada para mejorar tu precisión</p>
-</header>
-
-  <!-- Métricas -->
-  <div class="metrics">
-    <div class="metric">
-      <h3>Intentos</h3>
-      <p id="intentos">0</p>
+  <!-- Encabezado -->
+  <header>
+    <div class="back-container">
+      <a href="{{ url_for('index') }}" class="btn-back">⬅ Volver</a>
     </div>
-    <div class="metric">
-      <h3>Correctos</h3>
-      <p id="correctos">0</p>
-    </div>
-    <div class="metric">
-      <h3>Racha Actual</h3>
-      <p id="racha">0</p>
-    </div>
-    <div class="metric">
-      <h3>Precisión</h3>
-      <p id="precision">0%</p>
-    </div>
-  </div>
+    <h1>Entrenamiento de la vocal {{ vocal }}</h1>
+    <p>Realiza la seña de la vocal <strong>{{ vocal }}</strong> frente a la cámara.</p>
+  </header>
 
   <!-- Contenido principal -->
-  <div class="main-content">
+  <main class="main-content">
     <!-- Cámara -->
     <div class="card">
-      <h3>Cámara de Aprendizaje</h3>
-
-      <!-- Video + Canvas -->
-      <video id="camara" autoplay playsinline width="400" height="300" style="display:none;"></video>
-      <canvas id="canvas" width="400" height="300" style="border:1px solid #ccc;"></canvas>
+      <h3>Vista de Cámara</h3>
+      <!-- Usamos video + canvas en lugar de <img> -->
+      <video id="camara" autoplay playsinline style="display:none;"></video>
+      <canvas id="output" width="400" height="300" style="border:1px solid #ccc;"></canvas>
 
       <div class="controls">
-        <button id="playBtn" class="btn-play">▶️ Play</button>
-        <button id="stopBtn" class="btn-stop">⏹ Detener</button>
-        <button id="resetBtn" class="btn-restart">🔄 Reiniciar</button>
+        <button id="startTrain" class="btn-play">▶ Iniciar entrenamiento</button>
+        <button id="stopTrain" class="btn-stop">⏹ Detener entrenamiento</button>
       </div>
     </div>
 
-    <!-- Progreso -->
+    <!-- Resultado -->
     <div class="card">
-      <h3>Progreso de Aprendizaje</h3>
-      <p><b>Objetivo Actual:</b> {{ vocal }}</p>
-
-      <p>Progreso del Conjunto</p>
-      <div class="progress-bar"><span id="progreso"></span></div>
-
-      <p>Precisión de la Sesión</p>
-      <div class="progress-bar"><span id="precision-bar"></span></div>
-
-      <h4>Señales Disponibles:</h4>
-      <div class="signal-list">
-        <div class="signal">A</div>
-        <div class="signal">E</div>
-        <div class="signal">I</div>
-        <div class="signal">O</div>
-        <div class="signal">U</div>
-      </div>
+      <h3>Resultado</h3>
+      <div id="resultado">-</div>
     </div>
-  </div>
+  </main>
 
-  <!-- Scripts -->
+  <!-- Script MediaPipe -->
   <script>
     const video = document.getElementById("camara");
-    const canvas = document.getElementById("canvas");
+    const canvas = document.getElementById("output");
     const ctx = canvas.getContext("2d");
 
-    // 🚀 MediaPipe Hands
+    // Configurar MediaPipe Hands
     const hands = new Hands({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
@@ -99,67 +62,50 @@
     hands.onResults((results) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
       if (results.multiHandLandmarks) {
         for (const landmarks of results.multiHandLandmarks) {
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS,
-            {color: "#00FF00", lineWidth: 2});
-          drawLandmarks(ctx, landmarks,
-            {color: "#FF0000", lineWidth: 1, radius: 3});
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 2 });
+          drawLandmarks(ctx, landmarks, { color: "#FF0000", lineWidth: 2 });
         }
       }
     });
 
     const camera = new Camera(video, {
       onFrame: async () => {
-        await hands.send({image: video});
+        await hands.send({ image: video });
       },
       width: 400,
       height: 300
     });
     camera.start();
+  </script>
 
-    // Play
-    document.getElementById("playBtn").addEventListener("click", () => {
-      fetch("{{ url_for('start_recognition') }}", { method: "POST" })
-        .then(r => r.text())
-        .then(data => console.log("▶️", data));
+  <!-- Script Botones -->
+  <script>
+    // Iniciar entrenamiento
+    document.getElementById("startTrain").addEventListener("click", () => {
+      fetch("{{ url_for('start_training') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "label={{ vocal }}"
+      })
+      .then(r => r.text())
+      .then(data => {
+        console.log("✅", data);
+        document.getElementById("resultado").innerText = "Entrenamiento iniciado para la vocal {{ vocal }}";
+      });
     });
 
-    // Stop
-    document.getElementById("stopBtn").addEventListener("click", () => {
-      fetch("{{ url_for('stop_recognition') }}", { method: "POST" })
-        .then(r => r.text())
-        .then(data => console.log("⏹", data));
+    // Detener entrenamiento
+    document.getElementById("stopTrain").addEventListener("click", () => {
+      fetch("{{ url_for('stop_training') }}", { method: "POST" })
+      .then(r => r.text())
+      .then(data => {
+        console.log("🛑", data);
+        document.getElementById("resultado").innerText = "Entrenamiento detenido.";
+      });
     });
-
-    // Reset
-    document.getElementById("resetBtn").addEventListener("click", () => {
-      fetch("{{ url_for('reiniciar_practica') }}", { method: "POST" })
-        .then(r => r.json())
-        .then(data => {
-          console.log("🔄", data);
-          document.getElementById("intentos").innerText = "0";
-          document.getElementById("correctos").innerText = "0";
-          document.getElementById("racha").innerText = "0";
-          document.getElementById("precision").innerText = "0%";
-          document.getElementById("progreso").style.width = "0%";
-          document.getElementById("precision-bar").style.width = "0%";
-        });
-    });
-
-    // 📡 Actualizar estadísticas cada 2 segundos
-    setInterval(() => {
-      fetch("{{ url_for('status_practica') }}")
-        .then(r => r.json())
-        .then(data => {
-          document.getElementById("intentos").innerText = data.intentos;
-          document.getElementById("correctos").innerText = data.correctos;
-          document.getElementById("racha").innerText = data.racha;
-          document.getElementById("precision").innerText = data.precision + "%";
-          document.getElementById("progreso").style.width = data.progreso + "%";
-          document.getElementById("precision-bar").style.width = data.precision + "%";
-        });
-    }, 2000);
   </script>
 </body>
 </html>
