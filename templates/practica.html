@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <title>Practicando: {{ vocal }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='practica.css') }}">
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0"></script>
 </head>
 <body>
   
@@ -14,9 +16,6 @@
   <h2>Practicando: {{ vocal }}</h2>
   <p>Entrena con tu IA personalizada para mejorar tu precisión</p>
 </header>
-
-
-  </header>
 
   <!-- Métricas -->
   <div class="metrics">
@@ -43,7 +42,10 @@
     <!-- Cámara -->
     <div class="card">
       <h3>Cámara de Aprendizaje</h3>
-      <img id="video" src="{{ url_for('video_practica', vocal=vocal) }}" alt="Video">
+
+      <video id="camara" autoplay playsinline width="400" height="300" style="border:1px solid #ccc; position:absolute;"></video>
+      <canvas id="output" width="400" height="300" style="border:1px solid #ccc; position:relative; z-index:10;"></canvas>
+
       <div class="controls">
         <button id="playBtn" class="btn-play">▶️ Play</button>
         <button id="stopBtn" class="btn-stop">⏹ Detener</button>
@@ -74,22 +76,76 @@
   </div>
 
   <!-- Scripts -->
+  <script type="module">
+    import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+    const video = document.getElementById("camara");
+    const canvas = document.getElementById("output");
+    const ctx = canvas.getContext("2d");
+
+    let handLandmarker;
+    let running = false;
+
+    async function init() {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+      );
+
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-assets/hand_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 2
+      });
+
+      // encender cámara
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+
+      video.onloadeddata = () => {
+        running = true;
+        detectHands();
+      };
+    }
+
+    async function detectHands() {
+      if (!running) return;
+
+      const results = await handLandmarker.detectForVideo(video, performance.now());
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      if (results.landmarks) {
+        const drawingUtils = new DrawingUtils(ctx);
+        for (const landmarks of results.landmarks) {
+          drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 2 });
+          drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 1 });
+        }
+      }
+
+      requestAnimationFrame(detectHands);
+    }
+
+    init();
+  </script>
+
   <script>
-    // Play
+    // Botones siguen funcionando con tu backend
     document.getElementById("playBtn").addEventListener("click", () => {
       fetch("{{ url_for('start_recognition') }}", { method: "POST" })
         .then(r => r.text())
         .then(data => console.log("▶️", data));
     });
 
-    // Stop
     document.getElementById("stopBtn").addEventListener("click", () => {
       fetch("{{ url_for('stop_recognition') }}", { method: "POST" })
         .then(r => r.text())
         .then(data => console.log("⏹", data));
     });
 
-    // Reset
     document.getElementById("resetBtn").addEventListener("click", () => {
       fetch("{{ url_for('reiniciar_practica') }}", { method: "POST" })
         .then(r => r.json())
@@ -104,7 +160,6 @@
         });
     });
 
-    // 📡 Actualizar estadísticas cada 2 segundos
     setInterval(() => {
       fetch("{{ url_for('status_practica') }}")
         .then(r => r.json())
@@ -113,8 +168,6 @@
           document.getElementById("correctos").innerText = data.correctos;
           document.getElementById("racha").innerText = data.racha;
           document.getElementById("precision").innerText = data.precision + "%";
-
-          // actualizar barras
           document.getElementById("progreso").style.width = data.progreso + "%";
           document.getElementById("precision-bar").style.width = data.precision + "%";
         });
@@ -122,3 +175,4 @@
   </script>
 </body>
 </html>
+
