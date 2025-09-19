@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <title>Practicando: {{ vocal }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='practica.css') }}">
+  <!-- Cargar MediaPipe Hands y Drawing -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
   
@@ -41,9 +45,9 @@
     <div class="card">
       <h3>Cámara de Aprendizaje</h3>
 
-      <!-- Video del navegador -->
-      <video id="camara" autoplay playsinline width="400" height="300" style="border:1px solid #ccc;"></video>
-      <canvas id="canvas" style="display:none;"></canvas>
+      <!-- Video + Canvas -->
+      <video id="camara" autoplay playsinline width="400" height="300" style="display:none;"></video>
+      <canvas id="canvas" width="400" height="300" style="border:1px solid #ccc;"></canvas>
 
       <div class="controls">
         <button id="playBtn" class="btn-play">▶️ Play</button>
@@ -76,15 +80,43 @@
 
   <!-- Scripts -->
   <script>
-    // 🚀 Encender cámara del navegador
     const video = document.getElementById("camara");
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => {
-        video.srcObject = stream;
-      })
-      .catch(err => {
-        console.error("Error al acceder a la cámara:", err);
-      });
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // 🚀 MediaPipe Hands
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults((results) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS,
+            {color: "#00FF00", lineWidth: 2});
+          drawLandmarks(ctx, landmarks,
+            {color: "#FF0000", lineWidth: 1, radius: 3});
+        }
+      }
+    });
+
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({image: video});
+      },
+      width: 400,
+      height: 300
+    });
+    camera.start();
 
     // Play
     document.getElementById("playBtn").addEventListener("click", () => {
@@ -124,8 +156,6 @@
           document.getElementById("correctos").innerText = data.correctos;
           document.getElementById("racha").innerText = data.racha;
           document.getElementById("precision").innerText = data.precision + "%";
-
-          // actualizar barras
           document.getElementById("progreso").style.width = data.progreso + "%";
           document.getElementById("precision-bar").style.width = data.precision + "%";
         });
@@ -133,4 +163,3 @@
   </script>
 </body>
 </html>
-
