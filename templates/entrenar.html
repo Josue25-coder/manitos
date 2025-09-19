@@ -1,57 +1,51 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <title>Entrenamiento de la vocal {{ vocal }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='entrenar.css') }}">
-  <!-- MediaPipe Hands -->
+  <meta charset="UTF-8">
+  <title>Entrenamiento de Vocales</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    video, canvas { border: 2px solid #333; border-radius: 8px; margin: 10px; }
+    #controls { margin-top: 15px; }
+    button { margin: 5px; padding: 10px 15px; }
+  </style>
+  <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
-  <!-- Encabezado -->
-  <header>
-    <div class="back-container">
-      <a href="{{ url_for('index') }}" class="btn-back">⬅ Volver</a>
-    </div>
-    <h1>Entrenamiento de la vocal {{ vocal }}</h1>
-    <p>Realiza la seña de la vocal <strong>{{ vocal }}</strong> frente a la cámara.</p>
-  </header>
+  <h1>Entrenamiento de Vocales</h1>
 
-  <!-- Contenido principal -->
-  <main class="main-content">
-    <!-- Cámara -->
-    <div class="card">
-      <h3>Vista de Cámara</h3>
-      <!-- Usamos video + canvas en lugar de <img> -->
-      <video id="camara" autoplay playsinline style="display:none;"></video>
-      <canvas id="output" width="400" height="300" style="border:1px solid #ccc;"></canvas>
+  <!-- Video + Canvas -->
+  <video id="video" autoplay playsinline style="display:none;"></video>
+  <canvas id="output" width="640" height="480"></canvas>
 
-      <div class="controls">
-        <button id="startTrain" class="btn-play">▶ Iniciar entrenamiento</button>
-        <button id="stopTrain" class="btn-stop">⏹ Detener entrenamiento</button>
-      </div>
-    </div>
+  <!-- Controles -->
+  <div id="controls">
+    <label for="vocal">Selecciona Vocal:</label>
+    <select id="vocal">
+      <option value="A">A</option>
+      <option value="E">E</option>
+      <option value="I">I</option>
+      <option value="O">O</option>
+      <option value="U">U</option>
+    </select>
+    <button id="startBtn">Iniciar Entrenamiento</button>
+    <button id="stopBtn">Detener</button>
+  </div>
 
-    <!-- Resultado -->
-    <div class="card">
-      <h3>Resultado</h3>
-      <div id="resultado">-</div>
-    </div>
-  </main>
-
-  <!-- Script MediaPipe -->
   <script>
-    const video = document.getElementById("camara");
-    const canvas = document.getElementById("output");
-    const ctx = canvas.getContext("2d");
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
 
-    // Configurar MediaPipe Hands
+    let collecting = false; // indica si estamos guardando landmarks
+
+    // Inicializar MediaPipe Hands
     const hands = new Hands({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
@@ -59,53 +53,54 @@
       minTrackingConfidence: 0.7
     });
 
-    hands.onResults((results) => {
+    hands.onResults(onResults);
+
+    // Iniciar cámara
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({ image: video });
+      },
+      width: 640,
+      height: 480
+    });
+    camera.start();
+
+    function onResults(results) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
       if (results.multiHandLandmarks) {
         for (const landmarks of results.multiHandLandmarks) {
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 2 });
-          drawLandmarks(ctx, landmarks, { color: "#FF0000", lineWidth: 2 });
+          // Dibujar landmarks
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
+          drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
+
+          if (collecting) {
+            // Enviar landmarks al backend
+            const vocal = document.getElementById("vocal").value;
+            fetch("/guardar_entrenamiento", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ label: vocal, landmarks: landmarks })
+            })
+            .then(res => res.text())
+            .then(msg => console.log(msg));
+          }
         }
       }
+    }
+
+    // Botones
+    document.getElementById("startBtn").addEventListener("click", () => {
+      collecting = true;
+      alert("Entrenamiento iniciado, mostrando mano...");
     });
 
-    const camera = new Camera(video, {
-      onFrame: async () => {
-        await hands.send({ image: video });
-      },
-      width: 400,
-      height: 300
-    });
-    camera.start();
-  </script>
-
-  <!-- Script Botones -->
-  <script>
-    // Iniciar entrenamiento
-    document.getElementById("startTrain").addEventListener("click", () => {
-      fetch("{{ url_for('start_training') }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "label={{ vocal }}"
-      })
-      .then(r => r.text())
-      .then(data => {
-        console.log("✅", data);
-        document.getElementById("resultado").innerText = "Entrenamiento iniciado para la vocal {{ vocal }}";
-      });
-    });
-
-    // Detener entrenamiento
-    document.getElementById("stopTrain").addEventListener("click", () => {
-      fetch("{{ url_for('stop_training') }}", { method: "POST" })
-      .then(r => r.text())
-      .then(data => {
-        console.log("🛑", data);
-        document.getElementById("resultado").innerText = "Entrenamiento detenido.";
-      });
+    document.getElementById("stopBtn").addEventListener("click", () => {
+      collecting = false;
+      alert("Entrenamiento detenido");
     });
   </script>
 </body>
 </html>
+
